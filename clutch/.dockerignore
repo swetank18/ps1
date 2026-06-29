@@ -1,0 +1,9 @@
+.venv/
+.env
+__pycache__/
+**/__pycache__/
+*.pyc
+.git/
+*.md
+eval/
+run_web.sh

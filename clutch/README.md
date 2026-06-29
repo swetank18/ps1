@@ -42,25 +42,31 @@ adk eval clutch eval/deadline_sweep.evalset.json --print_detailed_results
 Report aggregate trajectory + intervention scores in the submission Doc.
 
 ## 4. Deploy to Cloud Run (mandatory gate)
+Deploys the **full web app** (polished UI + agent) as a Cloud Run service via Cloud Build —
+no Dockerfile juggling, one command:
 ```bash
 gcloud auth login
-gcloud config set project $GOOGLE_CLOUD_PROJECT
-adk deploy cloud_run \
-  --project=$GOOGLE_CLOUD_PROJECT \
-  --region=$GOOGLE_CLOUD_LOCATION \
-  --service_name=clutch \
-  --with_ui
-# choose "allow unauthenticated" for a public demo link
+gcloud config set project <PROJECT_ID>
+./deploy.sh                      # reads your key from .env, builds, deploys, prints the URL
 ```
+`deploy.sh` enables the needed APIs, deploys `--allow-unauthenticated`, and injects
+`GOOGLE_API_KEY` as a Cloud Run env var (kept out of the image). Override region/name with
+`GOOGLE_CLOUD_LOCATION=… SERVICE=… ./deploy.sh`.
+
+> Alt: `adk deploy cloud_run --with_ui` ships only the raw ADK dev UI. `deploy.sh` ships the
+> product experience, so prefer it for the demo link.
 
 ## 5. Make it autonomous (Cloud Scheduler → the agent acts on its own)
+The deployed service exposes `POST /api/sweep/run` — a self-contained sweep trigger. Point a
+cron job at it:
 ```bash
 gcloud scheduler jobs create http clutch-sweep \
   --schedule="0 */3 * * *" \
-  --uri="https://<CLOUD_RUN_URL>/run" --http-method=POST \
-  --location=$GOOGLE_CLOUD_LOCATION \
-  --message-body='{"appName":"clutch","userId":"demo","sessionId":"sweep","newMessage":{"role":"user","parts":[{"text":"Run a deadline sweep and intervene on the most at-risk task."}]}}'
+  --uri="https://<CLOUD_RUN_URL>/api/sweep/run" --http-method=POST \
+  --location=$GOOGLE_CLOUD_LOCATION
 ```
+Every 3 hours Clutch wakes itself, runs a deadline sweep, and intervenes on the most at-risk
+task — no user in the loop.
 
 ## Build order
 deploy stub → ingest + planner → sentinel + scheduler (real Calendar) → intervenor →

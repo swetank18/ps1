@@ -111,12 +111,14 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-async def sweep_stream():
-    PACE = 0.55  # seconds between steps, for a legible live trace
+async def sweep_events(pace: float = 0.55):
+    """Run the sweep, yielding (event, data) tuples and applying side effects.
+    Shared by the live SSE stream (pace>0) and the autonomy trigger (pace=0)."""
 
     async def step(event, data):
-        await asyncio.sleep(PACE)
-        return _sse(event, data)
+        if pace:
+            await asyncio.sleep(pace)
+        return (event, data)
 
     plan = orch.plan_sweep()
 
@@ -133,7 +135,8 @@ async def sweep_stream():
                                                 "No intervention needed — Clutch will not manufacture urgency."})
         STATE["sweeps"].insert(0, {"at": _now(), "at_risk": False,
                                    "trajectory": plan["trajectory"], "summary": "No action — all clear."})
-        yield _sse("done", {"state": snapshot(), "trajectory": plan["trajectory"]})
+        yield await step("done", {"state": snapshot(), "trajectory": plan["trajectory"],
+                                  "summary": "No action — every task is on track."})
         return
 
     task = plan["task"]
@@ -194,8 +197,24 @@ async def sweep_stream():
 
 @app.get("/api/sweep")
 async def sweep():
-    return StreamingResponse(sweep_stream(), media_type="text/event-stream",
+    async def gen():
+        async for event, data in sweep_events():
+            yield _sse(event, data)
+    return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/sweep/run")
+async def sweep_run():
+    """Non-streaming trigger for autonomy (Cloud Scheduler hits this on a cron)."""
+    out = {"at_risk": False, "summary": None, "trajectory": None}
+    async for event, data in sweep_events(pace=0.0):
+        if event == "verdict":
+            out["at_risk"] = data.get("at_risk", False)
+        elif event == "done":
+            out["summary"] = data.get("summary")
+            out["trajectory"] = data.get("trajectory")
+    return out
 
 
 # --------------------------------------------------------------------------

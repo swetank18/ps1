@@ -1,0 +1,8 @@
+# Files NOT uploaded to Cloud Build. Keep the build context lean & secret-free.
+.venv/
+.env
+__pycache__/
+**/__pycache__/
+*.pyc
+.git/
+.gitignore
