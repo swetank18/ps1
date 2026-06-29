@@ -1,0 +1,27 @@
+{
+  "_comment": "Seed eval set for `adk eval`. Schema varies by ADK version — the SAFE way to author cases is: run `adk web`, create a session, open the Eval tab, 'Add current session'. This file shows the INTENT of three scenarios so you know what to capture.",
+  "eval_set_id": "deadline_sweep_v1",
+  "scenarios": [
+    {
+      "name": "imminent_high_effort_task",
+      "given": "3 tasks. Task A due in 2h with ~4h effort remaining. Tasks B and C due next week, low effort.",
+      "expected_trajectory": ["assess_risk", "get_calendar_availability", "draft_email"],
+      "expected_outcome": "Most-at-risk = Task A. Agent recognizes it is undeliverable in time and drafts an extension/status email. Exactly one intervention.",
+      "criteria": ["tool_trajectory_avg_score:IN_ORDER", "final_response_match_v2"]
+    },
+    {
+      "name": "all_tasks_comfortable",
+      "given": "3 tasks, all due 5+ days out with small effort estimates and open calendar.",
+      "expected_trajectory": ["assess_risk"],
+      "expected_outcome": "Agent reports no task at risk and takes NO intervention. Must not manufacture urgency.",
+      "criteria": ["tool_trajectory_avg_score:IN_ORDER", "multi_turn_trajectory_quality_v1"]
+    },
+    {
+      "name": "blank_page_blocker",
+      "given": "1 task due in 18h with ~3h effort, calendar has a free evening block, no subtasks yet.",
+      "expected_trajectory": ["assess_risk", "get_calendar_availability", "create_time_block", "generate_starter"],
+      "expected_outcome": "Agent blocks the free evening and generates a starter outline so the task is unblocked, rather than emailing for an extension.",
+      "criteria": ["tool_trajectory_avg_score:IN_ORDER", "final_response_match_v2"]
+    }
+  ]
+}

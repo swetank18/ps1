@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clutch — autonomous deadline agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+</head>
+<body>
+  <div class="aurora"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">⚡</div>
+      <div>
+        <h1>Clutch</h1>
+        <p class="sub">autonomous deadline agent</p>
+      </div>
+    </div>
+    <div class="status" id="status">
+      <span class="pill" id="pill-model">model …</span>
+      <span class="pill" id="pill-key">key …</span>
+      <button class="ghost" id="btn-eval">▣ Eval harness</button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <p>
+      Clutch doesn't remind you — it <b>acts before you slip</b>. It audits your tasks against your
+      calendar, predicts the one most likely to fail, and takes a single concrete action to save it.
+    </p>
+    <div class="hero-actions">
+      <button class="solid" id="btn-seed">✨ Load demo brain-dump</button>
+      <button class="ghost" id="btn-reset">↺ Reset</button>
+    </div>
+  </section>
+
+  <main class="grid">
+    <!-- LEFT: capture + board -->
+    <section class="col-left">
+      <div class="card composer">
+        <div class="card-head"><h2>Brain-dump</h2><span class="hint">comma or newline separated</span></div>
+        <textarea id="dump" rows="3" placeholder="submit DBMS assignment Tue, prep DSA interview Thursday 6pm, pay hostel fee…"></textarea>
+        <div class="composer-foot">
+          <div class="examples" id="examples"></div>
+          <button class="solid" id="btn-capture">Capture →</button>
+        </div>
+      </div>
+
+      <div class="card-head section-head">
+        <h2>Task board <span class="count" id="task-count">0</span></h2>
+        <span class="hint">ranked by slip-risk</span>
+      </div>
+      <div class="board" id="board"></div>
+    </section>
+
+    <!-- RIGHT: the agent -->
+    <aside class="col-right">
+      <div class="card sweep-card">
+        <div class="card-head">
+          <h2>Deadline sweep</h2>
+          <span class="hint">sentinel → scheduler → intervenor</span>
+        </div>
+        <button class="sweep-btn" id="btn-sweep">
+          <span class="bolt">⚡</span> Run deadline sweep
+        </button>
+        <div class="summary" id="summary" hidden></div>
+        <ol class="trace" id="trace">
+          <li class="trace-empty">Run a sweep to watch Clutch triage your tasks and intervene, live.</li>
+        </ol>
+      </div>
+    </aside>
+  </main>
+
+  <section class="panels">
+    <div class="card">
+      <div class="card-head"><h2>Interventions</h2><span class="hint">actions Clutch took</span></div>
+      <div id="interventions" class="feed"><p class="muted">No interventions yet.</p></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Calendar blocks</h2><span class="hint">focus time reserved</span></div>
+      <div id="blocks" class="feed"><p class="muted">No blocks reserved yet.</p></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Sweep history</h2><span class="hint">autonomous run log</span></div>
+      <div id="history" class="feed"><p class="muted">No sweeps run yet.</p></div>
+    </div>
+  </section>
+
+  <footer class="techbar">
+    <span>Built on</span>
+    <span class="chip">Gemini 3 Flash</span><span class="chip">Google ADK</span>
+    <span class="chip">Cloud Run</span><span class="chip">Cloud Scheduler</span>
+    <span class="chip">Firestore</span><span class="chip">Calendar API</span>
+    <span class="chip">FastAPI</span>
+  </footer>
+
+  <!-- Eval modal -->
+  <div class="modal" id="eval-modal" hidden>
+    <div class="modal-card">
+      <div class="card-head">
+        <h2>Evaluation harness</h2>
+        <button class="ghost" id="btn-eval-close">✕</button>
+      </div>
+      <p class="muted">Golden deadline scenarios run through the live engine — each checks the agent's
+        <b>tool trajectory</b> against the expected one (the same intent as <code>adk eval</code>).</p>
+      <div class="eval-score" id="eval-score">Running…</div>
+      <div id="eval-results"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
