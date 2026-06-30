@@ -22,12 +22,12 @@ import uuid
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from clutch import tools
+from clutch import tools, vision
 from . import orchestrator as orch
 
 load_dotenv()
@@ -162,6 +162,21 @@ def ingest_document(body: DocBody):
         return {"created": [], "skipped": "no dated action items found", "state": snapshot()}
     created = orch.ingest("\n".join(lines), decompose=True)
     return {"created": created, "detected": len(lines), "state": snapshot()}
+
+
+@app.post("/api/ingest/image")
+async def ingest_image(file: UploadFile = File(...)):
+    """Multimodal ingest: a syllabus/brief screenshot or PDF -> Gemini -> dated tasks."""
+    data = await file.read()
+    if not data:
+        return {"created": [], "error": "empty file", "state": snapshot()}
+    out = vision.extract_task_lines(data, file.content_type or "application/octet-stream")
+    if out["status"] != "success":
+        return {"created": [], "error": out["message"], "state": snapshot()}
+    if not out["lines"]:
+        return {"created": [], "error": "no dated action items found in the document", "state": snapshot()}
+    created = orch.ingest("\n".join(out["lines"]), decompose=True)
+    return {"created": created, "detected": len(out["lines"]), "state": snapshot()}
 
 
 # --------------------------------------------------------------------------

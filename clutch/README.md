@@ -72,8 +72,27 @@ task — no user in the loop.
 deploy stub → ingest + planner → sentinel + scheduler (real Calendar) → intervenor →
 Cloud Scheduler autonomy → eval set → React frontend → Doc + **Final Submit** on BlockseBlock.
 
+## Multimodal ingest (syllabus image / PDF)
+The web app's **"Paste a document"** tab has an **Upload** button: drop a syllabus
+screenshot or PDF and Gemini extracts the dated action items (`POST /api/ingest/image`).
+Pasted text uses a deterministic parser (now incl. month names like "Oct 14"); images/PDFs
+need `GOOGLE_API_KEY`. Falls back with a clear message on the free-tier's transient 503s.
+
+## Real Google Calendar (optional — the strongest demo moment)
+Turn the calendar stub into real events:
+```bash
+# 1. Create a Desktop OAuth client in Google Cloud, download as clutch/credentials.json,
+#    add your email as a test user (keep the consent screen in "Testing").
+# 2. Authorize once (opens a browser, writes clutch/token.json):
+python -m clutch.calendar_client
+# 3. Run with real calendar on:
+CLUTCH_REAL_CALENDAR=1 ./run_web.sh
+```
+`credentials.json` and `token.json` are gitignored. Without them, the agent uses the
+deterministic stub so the demo and eval stay reproducible offline.
+
 ## Notes
 - Tools ship as in-memory stubs so the agent runs immediately; swap Firestore + Calendar incrementally.
-- Calendar: OAuth in **testing mode** with your own account — avoids verification.
+- Calendar: OAuth in **testing mode** with your own account — avoids verification (see above).
 - ADK 2.0 changed some APIs; if an import breaks, check https://google.github.io/adk-docs/.
 - Secrets go in Cloud Run env vars / Secret Manager, never in the repo.

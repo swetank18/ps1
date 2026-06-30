@@ -2,6 +2,10 @@
 .env
 **/.env
 *.key
+# google oauth — never commit
+**/credentials.json
+**/token.json
+.shot/
 
 # python
 .venv/

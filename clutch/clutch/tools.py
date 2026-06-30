@@ -335,10 +335,22 @@ def assess_risk() -> dict:
 def get_calendar_availability(start_iso: str, end_iso: str) -> dict:
     """Return free time slots between two ISO timestamps.
 
+    Uses the real Google Calendar free/busy API when CLUTCH_REAL_CALENDAR=1 and
+    OAuth is set up (see clutch/calendar_client.py); otherwise returns a stub so
+    the demo and eval run offline and deterministically.
+
     Args:
         start_iso: window start, ISO 8601.
         end_iso: window end, ISO 8601.
     """
+    from . import calendar_client as cal
+    if cal.is_enabled():
+        try:
+            return {"status": "success", "source": "google_calendar",
+                    "free_slots": cal.free_slots(start_iso, end_iso)}
+        except Exception as e:  # fall back rather than break the sweep
+            print(f"[clutch] calendar freebusy failed, using stub: {e}")
+
     # STUB: pretend the next two evenings are free.
     base = _now().replace(minute=0, second=0, microsecond=0)
     slots = [
@@ -347,7 +359,7 @@ def get_calendar_availability(start_iso: str, end_iso: str) -> dict:
         {"start": (base + timedelta(days=1, hours=5)).isoformat(),
          "end": (base + timedelta(days=1, hours=7)).isoformat()},
     ]
-    return {"status": "success", "free_slots": slots}
+    return {"status": "success", "source": "stub", "free_slots": slots}
 
 
 def create_time_block(task_id: str, start_iso: str, end_iso: str) -> dict:
@@ -359,9 +371,17 @@ def create_time_block(task_id: str, start_iso: str, end_iso: str) -> dict:
     """
     t = _TASKS.get(task_id)
     title = t["title"] if t else task_id
+    summary = f"Focus: {title}"
+    from . import calendar_client as cal
+    if cal.is_enabled():
+        try:
+            return {"status": "success", "source": "google_calendar",
+                    "event": cal.insert_event(summary, start_iso, end_iso)}
+        except Exception as e:
+            print(f"[clutch] calendar insert failed, using stub: {e}")
     # STUB: real impl calls service.events().insert(...). Return a fake event id for now.
-    return {"status": "success",
-            "event": {"id": str(uuid.uuid4())[:8], "summary": f"Focus: {title}",
+    return {"status": "success", "source": "stub",
+            "event": {"id": str(uuid.uuid4())[:8], "summary": summary,
                       "start": start_iso, "end": end_iso}}
 
 

@@ -249,6 +249,25 @@ function init() {
     t.rows = doc ? 6 : 3;
     $("#btn-capture").textContent = doc ? "Extract tasks →" : "Capture →";
     $("#examples").style.display = doc ? "none" : "";
+    $("#uploader").hidden = !doc;
+    $("#upload-status").textContent = "";
+  });
+  $("#btn-upload").addEventListener("click", () => $("#file-input").click());
+  $("#file-input").addEventListener("change", async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const st = $("#upload-status");
+    st.textContent = `Reading ${f.name}…`; st.className = "upload-status busy";
+    const fd = new FormData(); fd.append("file", f);
+    let r;
+    try { r = await fetch("/api/ingest/image", { method: "POST", body: fd }).then((x) => x.json()); }
+    catch { st.textContent = "upload failed"; st.className = "upload-status err"; return; }
+    e.target.value = "";
+    if (r.error || !r.created.length) {
+      st.textContent = r.error || "no dated items found"; st.className = "upload-status err";
+      return;
+    }
+    st.textContent = `✓ extracted ${r.created.length} task(s)`; st.className = "upload-status ok";
+    renderAll(r.state);
   });
   $("#btn-capture").addEventListener("click", async () => {
     const text = $("#dump").value.trim(); if (!text) return;
