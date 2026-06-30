@@ -199,7 +199,7 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: #b9c2
 /* ---------- panels ---------- */
 .panels {
   max-width: 1320px; margin: 26px auto 0; padding: 0 40px;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px;
 }
 .feed { display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow-y: auto; }
 .muted { color: var(--muted); font-size: 13px; }
@@ -236,6 +236,7 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: #b9c2
 /* ---------- eval modal ---------- */
 .modal { position: fixed; inset: 0; background: rgba(4, 6, 14, 0.72); backdrop-filter: blur(6px);
   display: grid; place-items: center; z-index: 50; padding: 24px; animation: fade 0.2s; }
+.modal[hidden] { display: none; }
 .modal-card { background: var(--card-solid); border: 1px solid var(--stroke-2); border-radius: 20px;
   padding: 26px; max-width: 720px; width: 100%; max-height: 86vh; overflow-y: auto; box-shadow: var(--shadow); }
 .eval-score { font-size: 26px; font-weight: 800; margin: 8px 0 18px; }
@@ -251,6 +252,54 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: #b9c2
 .ev-traj .row { display: flex; gap: 8px; margin-top: 4px; }
 .ev-traj .k { color: var(--muted); width: 70px; }
 .ev-traj .v { color: #b9c2ff; }
+
+/* ---------- composer mode tabs ---------- */
+.mode-tabs { display: flex; gap: 4px; background: rgba(8,11,22,0.6); border: 1px solid var(--stroke); border-radius: 10px; padding: 3px; }
+.mode { font-size: 12px; color: var(--muted); background: transparent; padding: 5px 11px; border-radius: 7px; transition: 0.15s; }
+.mode.active { color: #0a0a18; background: var(--grad); font-weight: 700; }
+
+/* ---------- task confidence + dependency ---------- */
+.conf { color: var(--muted); font-size: 11px; }
+.dep { margin-top: 10px; font-size: 11px; color: var(--high); background: rgba(255,159,67,0.08);
+  border: 1px solid rgba(255,159,67,0.25); border-radius: 8px; padding: 6px 9px; }
+.dep.ok { color: var(--muted); background: rgba(255,255,255,0.04); border-color: var(--stroke); }
+.dep b { color: #ffd9ad; }
+.dep.ok b { color: #cdd4ea; }
+
+/* ---------- intervention feedback ---------- */
+.iv-fb { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+.iv-fb.done { color: var(--low); font-style: italic; }
+.fb { font-size: 11px; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--stroke);
+  background: var(--card-solid); color: var(--text); transition: 0.15s; }
+.fb:hover:not(:disabled) { border-color: var(--stroke-2); transform: translateY(-1px); }
+.fb:disabled { opacity: 0.4; cursor: default; }
+.fb.accept:hover:not(:disabled) { border-color: rgba(56,211,159,0.5); color: var(--low); }
+.fb.dismiss:hover:not(:disabled) { border-color: rgba(255,77,109,0.5); color: var(--crit); }
+.fb.snooze:hover:not(:disabled) { border-color: rgba(255,210,76,0.5); color: var(--med); }
+
+/* ---------- learning panel ---------- */
+.learn-stats { display: flex; gap: 10px; margin-bottom: 12px; }
+.learn-stats > div { flex: 1; background: var(--card-solid); border: 1px solid var(--stroke); border-radius: 10px;
+  padding: 10px; text-align: center; }
+.learn-stats b { display: block; font-size: 20px; font-weight: 800;
+  background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.learn-stats span { font-size: 10.5px; color: var(--muted); }
+.learn-prefs { display: flex; flex-direction: column; gap: 7px; }
+.lp { display: flex; align-items: center; gap: 9px; background: var(--card-solid); border: 1px solid var(--stroke);
+  border-radius: 9px; padding: 8px 11px; font-size: 12px; }
+.lp-cat { font-weight: 600; text-transform: capitalize; flex: 1; }
+.lp-w { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 600; }
+.lp.up .lp-w { color: var(--low); } .lp.down .lp-w { color: var(--crit); } .lp.flat .lp-w { color: var(--muted); }
+.lp-n { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+
+/* ---------- eval metrics ---------- */
+.eval-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+.metric { background: var(--card); border: 1px solid var(--stroke); border-radius: 11px; padding: 11px 13px; }
+.metric .m-k { font-size: 11px; color: var(--muted); display: block; }
+.metric .m-v { font-size: 19px; font-weight: 800; }
+.metric .m-bar { height: 4px; border-radius: 99px; background: rgba(255,255,255,0.08); margin-top: 7px; overflow: hidden; }
+.metric .m-bar > i { display: block; height: 100%; background: var(--grad); border-radius: 99px; }
+.ev-traj .v.ok { color: var(--low); } .ev-traj .v.no { color: var(--crit); }
 
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }

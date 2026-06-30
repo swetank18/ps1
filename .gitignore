@@ -15,3 +15,6 @@ node_modules/
 
 # os
 .DS_Store
+
+# local-only notes
+STATUS.md

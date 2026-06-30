@@ -21,6 +21,36 @@ from datetime import datetime, time, timedelta, timezone
 # --------------------------------------------------------------------------
 _TASKS: dict[str, dict] = {}
 
+# --------------------------------------------------------------------------
+# Learning memory.  Clutch adapts to how you respond to its interventions:
+# accepting an action reinforces urgency for that kind of task; dismissing it
+# teaches Clutch to back off. Keyed by a coarse task category so the signal
+# generalises across similar tasks. TODO: persist alongside tasks in Firestore.
+# --------------------------------------------------------------------------
+_PREFS: dict[str, dict] = {}   # category -> {"weight": float, "accepts": int, "dismisses": int, "snoozes": int}
+
+_CATEGORIES = [
+    ("assignment", ("assignment", "report", "essay", "paper", "homework", "submit", "dbms", "thesis")),
+    ("interview",  ("interview", "dsa", "leetcode", "prep", "study", "exam", "test", "revise")),
+    ("application", ("application", "apply", "resume", "cv", "cover letter", "internship", "job")),
+    ("admin",      ("pay", "fee", "bill", "renew", "register", "book", "form", "tax")),
+    ("comms",      ("email", "call", "reply", "message", "follow up", "ping")),
+    ("creative",   ("blog", "post", "deck", "slides", "presentation", "design", "draft", "write")),
+]
+
+
+def categorize(title: str) -> str:
+    """Map a task title to a coarse category used for the learning memory."""
+    low = title.lower()
+    for cat, keys in _CATEGORIES:
+        if any(k in low for k in keys):
+            return cat
+    return "general"
+
+
+def _pref(cat: str) -> dict:
+    return _PREFS.setdefault(cat, {"weight": 1.0, "accepts": 0, "dismisses": 0, "snoozes": 0})
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -42,6 +72,13 @@ _WEEKDAYS = {
 }
 
 _DEFAULT_DUE = time(17, 0)  # 5pm if no time-of-day is mentioned
+
+_MONTHS = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10,
+    "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
 
 
 def _parse_time_of_day(text: str) -> time | None:
@@ -87,6 +124,27 @@ def _parse_deadline(text: str) -> str | None:
         try:
             dt = datetime.fromisoformat(f"{date_part}T{time_part}")
             return dt.replace(tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            pass
+
+    # month-name date: "Oct 14", "October 14, 2026", "14 Dec", "Dec 3rd"
+    month_alt = "|".join(_MONTHS)
+    m = (re.search(rf"\b({month_alt})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(\d{{4}}))?\b", low)
+         or re.search(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({month_alt})\.?(?:,?\s+(\d{{4}}))?\b", low))
+    if m:
+        g = m.groups()
+        if g[0] in _MONTHS:          # "Oct 14"
+            mon, day, yr = _MONTHS[g[0]], int(g[1]), g[2]
+        else:                         # "14 Oct"
+            mon, day, yr = _MONTHS[g[1]], int(g[0]), g[2]
+        year = int(yr) if yr else now.year
+        t = tod or _DEFAULT_DUE
+        try:
+            dt = datetime(year, mon, day, t.hour, t.minute, tzinfo=timezone.utc)
+            # no explicit year and the date already passed -> roll to next year
+            if not yr and dt < now:
+                dt = dt.replace(year=year + 1)
+            return dt.isoformat()
         except ValueError:
             pass
 
@@ -140,6 +198,8 @@ def add_tasks(raw_text: str) -> dict:
             "deadline": _parse_deadline(line),  # ISO string or None
             "effort_minutes": None,             # filled by decompose_task
             "subtasks": [],
+            "depends_on": [],                   # task ids that must finish first
+            "category": categorize(line),
             "status": "open",
             "created_at": _now().isoformat(),
         }
@@ -168,13 +228,65 @@ def decompose_task(task_id: str, subtasks: list[str], effort_minutes: int) -> di
     return {"status": "success", "task": t}
 
 
+def link_dependency(task_id: str, depends_on_task_id: str) -> dict:
+    """Record that `task_id` cannot start until `depends_on_task_id` is done.
+
+    Dependencies let the risk engine propagate urgency: if a prerequisite is
+    itself at risk, the work waiting on it inherits that pressure.
+
+    Args:
+        task_id: the blocked (downstream) task.
+        depends_on_task_id: the prerequisite (upstream) task that must finish first.
+    """
+    t = _TASKS.get(task_id)
+    if not t:
+        return {"status": "error", "message": f"no task {task_id}"}
+    if depends_on_task_id not in _TASKS:
+        return {"status": "error", "message": f"no task {depends_on_task_id}"}
+    if depends_on_task_id == task_id:
+        return {"status": "error", "message": "a task cannot depend on itself"}
+    if depends_on_task_id not in t["depends_on"]:
+        t["depends_on"].append(depends_on_task_id)
+    return {"status": "success", "task": t}
+
+
+def record_feedback(task_category: str, action: str) -> dict:
+    """Learn from how the user responded to an intervention.
+
+    `action` is one of: accept (the intervention was useful), dismiss (it was
+    noise), snooze (right idea, wrong time). Accepts raise the urgency weight for
+    that category; dismisses lower it; snoozes nudge it down slightly. The weight
+    feeds back into the next sweep's risk scoring and nudge escalation.
+
+    Args:
+        task_category: coarse category (assignment, interview, admin, ...).
+        action: "accept" | "dismiss" | "snooze".
+    """
+    p = _pref(task_category)
+    if action == "accept":
+        p["accepts"] += 1
+        p["weight"] = min(p["weight"] * 1.25, 2.5)
+    elif action == "dismiss":
+        p["dismisses"] += 1
+        p["weight"] = max(p["weight"] * 0.6, 0.25)
+    elif action == "snooze":
+        p["snoozes"] += 1
+        p["weight"] = max(p["weight"] * 0.85, 0.25)
+    else:
+        return {"status": "error", "message": f"unknown action {action}"}
+    p["weight"] = round(p["weight"], 3)
+    return {"status": "success", "category": task_category, "pref": p}
+
+
 def assess_risk() -> dict:
     """Score slip-risk for every open task and return them ranked, worst first.
 
-    Risk = deadline proximity x effort remaining x calendar scarcity.
+    Risk = (effort / hours-left) x learned-category-weight, then propagated along
+    dependency edges so work blocked by an at-risk prerequisite inherits pressure.
+    Each entry carries a confidence (lower when deadline/effort are unknown).
     Returns the ranked list plus the single highest-risk task_id (or None if all safe).
     """
-    ranked = []
+    base: dict[str, dict] = {}
     for t in _TASKS.values():
         if t["status"] != "open":
             continue
@@ -184,14 +296,33 @@ def assess_risk() -> dict:
             hours_left = max((datetime.fromisoformat(deadline) - _now()).total_seconds() / 3600, 0.1)
         else:
             hours_left = 72.0  # unknown deadline = treat as moderately distant
-        # crude pressure score; higher = more at risk
-        score = round((effort / 60.0) / hours_left, 3)
-        ranked.append({"task_id": t["id"], "title": t["title"], "risk": score,
-                       "hours_left": round(hours_left, 1), "effort_minutes": effort})
-    ranked.sort(key=lambda r: r["risk"], reverse=True)
-    # risk = remaining-effort / hours-left; a task that needs >10% of your
-    # remaining hours is flagged at-risk. (0.10 keeps the golden eval scenarios
-    # consistent: scenario 3 at 0.167 fires, the "all comfortable" set stays quiet.)
+        weight = _pref(t.get("category") or "general")["weight"]
+        raw = (effort / 60.0) / hours_left
+        score = round(raw * weight, 3)
+        # confidence: high when we know both the deadline and a decomposed effort.
+        conf = 0.9 if (deadline and t.get("effort_minutes")) else 0.6 if deadline else 0.4
+        base[t["id"]] = {"task_id": t["id"], "title": t["title"], "risk": score,
+                         "base_risk": round(raw, 3), "hours_left": round(hours_left, 1),
+                         "effort_minutes": effort, "category": t.get("category") or "general",
+                         "weight": weight, "confidence": conf, "blocked_by": None,
+                         "depends_on": list(t.get("depends_on") or [])}
+
+    # Dependency propagation: a task waiting on an at-risk prerequisite inherits
+    # the larger of (its own risk, 80% of the blocker's risk) and is flagged.
+    for entry in base.values():
+        for dep_id in entry["depends_on"]:
+            dep = base.get(dep_id)
+            if dep and dep["base_risk"] > entry["risk"]:
+                inherited = round(dep["base_risk"] * 0.8 * entry["weight"], 3)
+                if inherited > entry["risk"]:
+                    entry["risk"] = inherited
+                    entry["blocked_by"] = {"task_id": dep_id, "title": dep["title"]}
+
+    ranked = sorted(base.values(), key=lambda r: r["risk"], reverse=True)
+    # A task that needs >10% of your remaining hours is flagged at-risk. (0.10
+    # keeps the golden eval scenarios consistent: scenario 3 at 0.167 fires, the
+    # "all comfortable" set stays quiet.) Learned weight & dependencies can lift
+    # a task over this line even when its raw proximity wouldn't.
     top = ranked[0]["task_id"] if ranked and ranked[0]["risk"] >= 0.10 else None
     return {"status": "success", "ranked": ranked, "most_at_risk": top}
 

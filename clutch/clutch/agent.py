@@ -42,10 +42,11 @@ risk_sentinel = LlmAgent(
     description="Scores slip-risk for every task and names the single most at-risk one.",
     instruction=(
         "Call assess_risk. Slip-risk rises with deadline proximity, effort remaining, "
-        "and how little free calendar time exists before the deadline. Identify exactly "
-        "ONE task as most at-risk and state, in one sentence, WHY. If every task is "
-        "comfortably ahead of schedule, say so and recommend NO intervention — do not "
-        "manufacture urgency."
+        "and how little free calendar time exists before the deadline. It also reflects "
+        "learned per-category weights and DEPENDENCIES — a task blocked by an at-risk "
+        "prerequisite inherits its urgency (see `blocked_by`). Identify exactly ONE task "
+        "as most at-risk and state, in one sentence, WHY. If every task is comfortably "
+        "ahead of schedule, say so and recommend NO intervention — do not manufacture urgency."
     ),
     tools=[tools.list_tasks, tools.assess_risk],
 )
@@ -98,11 +99,15 @@ root_agent = LlmAgent(
         "You are Clutch, a proactive productivity agent. You do not just remind — you act.\n"
         "- When the user gives a brain-dump of tasks, call add_tasks to capture them, then "
         "delegate to `planner` to decompose them.\n"
+        "- If the user says one task must wait on another, call link_dependency so the risk "
+        "engine can propagate urgency along the chain.\n"
+        "- When the user reacts to an intervention ('yes do it' / 'ignore that' / 'later'), call "
+        "record_feedback (accept / dismiss / snooze) so Clutch adapts to them over time.\n"
         "- When the user (or a scheduled trigger) asks to run a deadline sweep, delegate to "
         "`deadline_sweep`, which will assess risk, block time, and intervene.\n"
         "- Be concise. Surface what you did and why. Always prefer taking a concrete action "
         "over offering advice."
     ),
     sub_agents=[planner, deadline_sweep],
-    tools=[tools.add_tasks, tools.list_tasks],
+    tools=[tools.add_tasks, tools.list_tasks, tools.link_dependency, tools.record_feedback],
 )

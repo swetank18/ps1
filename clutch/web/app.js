@@ -41,6 +41,12 @@ function renderBoard(tasks) {
     const pct = Math.min((t.risk || 0) * 100, 100);
     const atRisk = i === 0 && (t.risk || 0) >= 0.1;
     const subs = (t.subtasks || []).map((s) => `<span class="subtask">${esc(s)}</span>`).join("");
+    const conf = t.confidence != null
+      ? `<span class="conf" title="how sure Clutch is — higher with a known deadline + estimated effort">◑ ${Math.round(t.confidence * 100)}% conf</span>` : "";
+    const blocked = t.blocked_by
+      ? `<div class="dep">⛓ blocked by <b>${esc(t.blocked_by.title)}</b> — inherits its risk</div>`
+      : (t.depends_on_titles && t.depends_on_titles.length
+          ? `<div class="dep ok">⛓ waits on ${t.depends_on_titles.map(esc).join(", ")}</div>` : "");
     return `<div class="task ${atRisk ? "at-risk" : ""}" style="--accent:${accent[band]}; animation-delay:${i * 0.04}s">
       <div class="task-top">
         <div class="task-title">${esc(t.title)}</div>
@@ -49,8 +55,10 @@ function renderBoard(tasks) {
       <div class="task-meta">
         <span>⏳ <b>${relTime(t.deadline)}</b></span>
         <span>⚙️ <b>${t.effort_minutes ?? "—"} min</b></span>
+        ${conf}
       </div>
       <div class="gauge"><i style="width:${pct}%"></i></div>
+      ${blocked}
       ${subs ? `<div class="subtasks">${subs}</div>` : ""}
     </div>`;
   }).join("");
@@ -73,6 +81,36 @@ function renderPanels(s) {
     ? s.sweeps.map((sw) => `<div class="hist"><span class="h-dot ${sw.at_risk ? "act" : "clear"}"></span>
         <div><div>${esc(sw.summary)}</div><div class="h-traj">${sw.trajectory.join(" → ")}</div></div></div>`).join("")
     : `<p class="muted">No sweeps run yet.</p>`;
+
+  renderLearning(s.learning);
+}
+
+function renderLearning(l) {
+  const el = $("#learning");
+  if (!el) return;
+  if (!l || (!l.feedback_total && !l.interventions_total)) {
+    el.innerHTML = `<p class="muted">Accept or dismiss an intervention to teach Clutch.</p>`;
+    return;
+  }
+  const c = l.counts || {};
+  const acc = c.accept || 0, total = (c.accept || 0) + (c.dismiss || 0) + (c.snooze || 0);
+  const rate = total ? Math.round((acc / total) * 100) : 0;
+  const prefs = Object.entries(l.prefs || {})
+    .sort((a, b) => b[1].weight - a[1].weight)
+    .map(([cat, p]) => {
+      const dir = p.weight > 1.05 ? "up" : p.weight < 0.95 ? "down" : "flat";
+      const arrow = dir === "up" ? "↑" : dir === "down" ? "↓" : "→";
+      return `<div class="lp ${dir}"><span class="lp-cat">${esc(cat)}</span>
+        <span class="lp-w">${arrow} ×${p.weight.toFixed(2)}</span>
+        <span class="lp-n">${p.accepts}✓ / ${p.dismisses}✕ / ${p.snoozes}⏰</span></div>`;
+    }).join("");
+  el.innerHTML = `
+    <div class="learn-stats">
+      <div><b>${l.interventions_total}</b><span>actions taken</span></div>
+      <div><b>${rate}%</b><span>you accepted</span></div>
+      <div><b>${l.feedback_total}</b><span>signals</span></div>
+    </div>
+    ${prefs ? `<div class="learn-prefs">${prefs}</div>` : ""}`;
 }
 
 function renderIv(r) {
@@ -82,9 +120,17 @@ function renderIv(r) {
       ? `${body.title}\n• ${body.outline.join("\n• ")}`
       : JSON.stringify(body, null, 2);
   }
+  const fb = r.feedback
+    ? `<div class="iv-fb done">You ${r.feedback}ed this — Clutch adjusted.</div>`
+    : `<div class="iv-fb" data-id="${r.id}">
+        <span>Was this right?</span>
+        <button class="fb accept" data-act="accept">✓ Accept</button>
+        <button class="fb dismiss" data-act="dismiss">✕ Dismiss</button>
+        <button class="fb snooze" data-act="snooze">⏰ Snooze</button>
+      </div>`;
   return `<div class="iv"><div class="iv-head"><span class="iv-icon">${r.icon}</span>
       <div><div class="iv-title">${esc(r.title)}</div><div class="iv-task">${esc(r.task)}</div></div></div>
-      <div class="iv-body">${esc(body)}</div></div>`;
+      <div class="iv-body">${esc(body)}</div>${fb}</div>`;
 }
 
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
@@ -164,7 +210,12 @@ async function openEval() {
   $("#eval-score").textContent = "Running…";
   $("#eval-results").innerHTML = "";
   const e = await api("/api/eval");
-  $("#eval-score").innerHTML = `<b>${e.passed}/${e.total}</b> trajectories correct · score <b>${e.score.toFixed(2)}</b>`;
+  $("#eval-score").innerHTML = `<b>${e.passed}/${e.total}</b> scenarios fully correct · overall <b>${e.score.toFixed(2)}</b>`;
+  const m = e.metrics || {};
+  $("#eval-metrics").innerHTML = [
+    ["Tool trajectory", m.trajectory], ["Decision (right task)", m.decision], ["Action (right move)", m.action],
+  ].map(([k, v]) => `<div class="metric"><span class="m-k">${k}</span><span class="m-v">${(v ?? 0).toFixed(2)}</span>
+      <div class="m-bar"><i style="width:${(v ?? 0) * 100}%"></i></div></div>`).join("");
   $("#eval-results").innerHTML = e.results.map((r) => `
     <div class="ev-case ${r.passed ? "pass" : "fail"}">
       <div class="ev-name">${esc(r.name)} <span class="ev-tag ${r.passed ? "pass" : "fail"}">${r.passed ? "pass" : "fail"}</span></div>
@@ -172,6 +223,8 @@ async function openEval() {
       <div class="ev-traj">
         <div class="row"><span class="k">expected</span><span class="v">${r.expected.join(" → ")}</span></div>
         <div class="row"><span class="k">actual</span><span class="v">${r.got.join(" → ")}</span></div>
+        <div class="row"><span class="k">decision</span><span class="v ${r.decision_ok ? "ok" : "no"}">${esc(r.decision_got ?? "no action")}${r.decision_ok ? " ✓" : " ✕"}</span></div>
+        <div class="row"><span class="k">action</span><span class="v ${r.action_ok ? "ok" : "no"}">${esc(r.action_got ?? "none")}${r.action_ok ? " ✓" : " ✕"}</span></div>
       </div>
     </div>`).join("");
 }
@@ -184,13 +237,43 @@ function init() {
     const t = $("#dump"); t.value = t.value ? `${t.value.trim()}, ${e.target.textContent}` : e.target.textContent;
     t.focus();
   });
+  let mode = "dump";
+  const DOC_SAMPLE = "Course syllabus:\n- Midterm exam on Oct 14\n- Project proposal due Nov 21\n- Final paper deadline Dec 3";
+  $(".mode-tabs").addEventListener("click", (e) => {
+    if (!e.target.classList.contains("mode")) return;
+    mode = e.target.dataset.mode;
+    document.querySelectorAll(".mode").forEach((b) => b.classList.toggle("active", b === e.target));
+    const t = $("#dump"), doc = mode === "doc";
+    $("#composer-hint").textContent = doc ? "paste prose — Clutch extracts dated items" : "comma or newline separated";
+    t.placeholder = doc ? DOC_SAMPLE : "submit DBMS assignment Tue, prep DSA interview Thursday 6pm, pay hostel fee…";
+    t.rows = doc ? 6 : 3;
+    $("#btn-capture").textContent = doc ? "Extract tasks →" : "Capture →";
+    $("#examples").style.display = doc ? "none" : "";
+  });
   $("#btn-capture").addEventListener("click", async () => {
     const text = $("#dump").value.trim(); if (!text) return;
-    const r = await api("/api/ingest", {
+    const btn = $("#btn-capture"); btn.disabled = true;
+    const url = mode === "doc" ? "/api/ingest/document" : "/api/ingest";
+    const r = await api(url, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
+    btn.disabled = false;
+    if (mode === "doc" && !r.created.length) {
+      $("#composer-hint").textContent = "no dated action items found — add dates like “Oct 14”";
+      return;
+    }
     $("#dump").value = ""; renderAll(r.state);
+  });
+  $("#interventions").addEventListener("click", async (e) => {
+    const btn = e.target.closest(".fb"); if (!btn) return;
+    const id = btn.closest(".iv-fb").dataset.id;
+    btn.closest(".iv-fb").querySelectorAll(".fb").forEach((b) => (b.disabled = true));
+    const r = await api("/api/feedback", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intervention_id: id, action: btn.dataset.act }),
+    });
+    if (r.state) renderAll(r.state);
   });
   $("#dump").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#btn-capture").click();

@@ -78,16 +78,30 @@ def _humanize_hours(hours: float) -> str:
     return f"{round(hours / 24)}d"
 
 
-def _reason(entry: dict, deliverable: bool) -> str:
+_PEAK_HOURS = range(9, 18)  # treat 9am–6pm as deep-work hours
+
+
+def _reason(entry: dict, deliverable: bool, free_min: float | None = None) -> str:
     title = entry["title"]
     hl = _humanize_hours(entry["hours_left"])
     eff = entry["effort_minutes"]
+    blocked = entry.get("blocked_by")
+    if blocked:
+        return (f"“{title}” is blocked by “{blocked['title']}”, which is itself at risk — "
+                f"if that slips, this slips with it.")
     if not deliverable:
         return (f"“{title}” needs ~{eff} min of work but only {hl} remain — "
                 f"it cannot realistically be finished in time.")
-    pct = round(entry["risk"] * 100)
+    pct = round(entry["base_risk"] * 100)
+    tail = ""
+    if free_min is not None and free_min < eff:
+        tail = f", and only ~{round(free_min)} min of calendar is free before then"
+    if entry.get("weight", 1.0) > 1.15:
+        tail += " (you usually act on these, so Clutch is weighting it up)"
+    elif entry.get("weight", 1.0) < 0.85:
+        tail += " (you tend to dismiss these, so Clutch is weighting it down)"
     return (f"“{title}” needs ~{eff} min of work with only {hl} left "
-            f"(~{pct}% of your remaining time) — the most likely to slip.")
+            f"(~{pct}% of your remaining time){tail} — the most likely to slip.")
 
 
 # --------------------------------------------------------------------------
@@ -112,8 +126,18 @@ def plan_sweep() -> dict:
     # Scheduler always checks availability for the at-risk task.
     plan["trajectory"].append("get_calendar_availability")
     now = datetime.now(timezone.utc)
+    dl = datetime.fromisoformat(deadline) if deadline else None
     end = deadline or (now.isoformat())
     slots = tools.get_calendar_availability(now.isoformat(), end)["free_slots"]
+
+    # Calendar scarcity: how much free time actually lands before the deadline.
+    def _eligible(s: dict) -> bool:
+        return not (dl and datetime.fromisoformat(s["start"]) >= dl)
+
+    free_min = sum((datetime.fromisoformat(s["end"]) - datetime.fromisoformat(s["start"])).total_seconds() / 60
+                   for s in slots if _eligible(s))
+    plan["free_min"] = round(free_min)
+    plan["scarcity"] = round(min(entry["effort_minutes"] / free_min, 9.9), 2) if free_min else None
 
     blocks: list[dict] = []
     if not deliverable:
@@ -121,18 +145,17 @@ def plan_sweep() -> dict:
         action = "draft_email"
         plan["trajectory"].append("draft_email")
     else:
-        # Reserve focus time in free slots that land before the deadline.
+        # Reserve focus time, preferring deep-work (peak) hours, in slots before
+        # the deadline. Stable sort keeps chronological order within each bucket.
         remaining = entry["effort_minutes"]
-        dl = datetime.fromisoformat(deadline) if deadline else None
-        for s in slots:
+        eligible = sorted((s for s in slots if _eligible(s)),
+                          key=lambda s: 0 if datetime.fromisoformat(s["start"]).hour in _PEAK_HOURS else 1)
+        for s in eligible:
             if remaining <= 0:
                 break
-            s_start = datetime.fromisoformat(s["start"])
-            s_end = datetime.fromisoformat(s["end"])
-            if dl and s_start >= dl:
-                continue
-            mins = (s_end - s_start).total_seconds() / 60
-            blocks.append(s)
+            mins = (datetime.fromisoformat(s["end"]) - datetime.fromisoformat(s["start"])).total_seconds() / 60
+            peak = datetime.fromisoformat(s["start"]).hour in _PEAK_HOURS
+            blocks.append({**s, "peak": peak})
             plan["trajectory"].append("create_time_block")
             remaining -= mins
         # Intervenor: blank page -> kick-start it; otherwise nudge.
@@ -143,9 +166,12 @@ def plan_sweep() -> dict:
         plan["trajectory"].append(action)
 
     plan.update(task=task, entry=entry, deliverable=deliverable,
-                reason=_reason(entry, deliverable), blocks=blocks, action=action)
+                reason=_reason(entry, deliverable, free_min), blocks=blocks, action=action)
     return plan
 
 
-def nudge_level(score: float) -> str:
-    return "urgent" if score >= 0.5 else "firm" if score >= 0.20 else "gentle"
+def nudge_level(score: float, weight: float = 1.0) -> str:
+    # Learned weight shifts the escalation: categories you act on get firmer
+    # nudges sooner; ones you dismiss stay gentle longer.
+    s = score * weight
+    return "urgent" if s >= 0.5 else "firm" if s >= 0.20 else "gentle"

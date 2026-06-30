@@ -43,7 +43,13 @@
     <!-- LEFT: capture + board -->
     <section class="col-left">
       <div class="card composer">
-        <div class="card-head"><h2>Brain-dump</h2><span class="hint">comma or newline separated</span></div>
+        <div class="card-head">
+          <div class="mode-tabs">
+            <button class="mode active" data-mode="dump">Brain-dump</button>
+            <button class="mode" data-mode="doc">Paste a document</button>
+          </div>
+          <span class="hint" id="composer-hint">comma or newline separated</span>
+        </div>
         <textarea id="dump" rows="3" placeholder="submit DBMS assignment Tue, prep DSA interview Thursday 6pm, pay hostel fee…"></textarea>
         <div class="composer-foot">
           <div class="examples" id="examples"></div>
@@ -89,6 +95,10 @@
       <div class="card-head"><h2>Sweep history</h2><span class="hint">autonomous run log</span></div>
       <div id="history" class="feed"><p class="muted">No sweeps run yet.</p></div>
     </div>
+    <div class="card">
+      <div class="card-head"><h2>What Clutch learned</h2><span class="hint">adapts to your feedback</span></div>
+      <div id="learning" class="feed"><p class="muted">Accept or dismiss an intervention to teach Clutch.</p></div>
+    </div>
   </section>
 
   <footer class="techbar">
@@ -109,6 +119,7 @@
       <p class="muted">Golden deadline scenarios run through the live engine — each checks the agent's
         <b>tool trajectory</b> against the expected one (the same intent as <code>adk eval</code>).</p>
       <div class="eval-score" id="eval-score">Running…</div>
+      <div class="eval-metrics" id="eval-metrics"></div>
       <div id="eval-results"></div>
     </div>
   </div>
